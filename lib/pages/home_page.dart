@@ -18,11 +18,11 @@ class HomePage extends StatelessWidget {
             children: <Widget>[
               // Welcome message.
               Text(
-                'Welcome to the Desktop Forms App!',
+                'महासेतू अँप मध्ये तुमचे स्वागत आहे!',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.blue.shade700,
-                  fontWeight: FontWeight.bold,
-                ),
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
@@ -39,7 +39,7 @@ class HomePage extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: () =>
                           context.go('/form1/new'), // Navigate to new Form 1.
-                      child: const Text('Fill Form 1'),
+                      child: const Text('रहिवाशी दाखला'),
                     ),
                   ),
                   // Button for Form 2.
@@ -49,7 +49,7 @@ class HomePage extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: () =>
                           context.go('/form2/new'), // Navigate to new Form 2.
-                      child: const Text('Fill Form 2'),
+                      child: const Text('उत्पन्नाचा दाखला'),
                     ),
                   ),
                 ],

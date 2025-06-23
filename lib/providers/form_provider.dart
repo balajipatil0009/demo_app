@@ -1,46 +1,59 @@
+// lib/providers/form_provider.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_desktop_app/models/form_data.dart';
-import 'package:flutter_desktop_app/services/isar_service.dart';
+// CHANGE THE SERVICE IMPORT
+import 'package:flutter_desktop_app/services/sqlite_service.dart';
 
-// FormProvider extends ChangeNotifier to notify listeners about state changes.
 class FormProvider with ChangeNotifier {
-  List<BaseFormData> _forms = []; // Private list of forms.
-  final IsarService _isarService = IsarService(); // Isar service instance.
+  List<BaseFormData> _forms = [];
+  // CHANGE THE SERVICE INSTANCE
+  final SQLiteService _sqliteService = SQLiteService();
 
-  List<BaseFormData> get forms => _forms; // Getter for forms list.
+  List<BaseFormData> get forms => _forms;
 
-  // Load all forms from Isar database.
   Future<void> loadForms() async {
-    _forms = await _isarService.getAllForms();
-    notifyListeners(); // Notify listeners that the data has changed.
+    // Call the new service's method
+    _forms = await _sqliteService.getAllForms();
+    notifyListeners();
   }
 
-  // Add a new form to the list and database.
   void addForm(BaseFormData form) {
+    // This logic can remain the same as saving is handled in the UI
     _forms.add(form);
-    notifyListeners(); // Notify listeners.
-    // Saving to Isar is handled within the form pages upon submission.
+    notifyListeners();
   }
 
-  // Update an existing form in the list and database.
-  void updateForm(BaseFormData updatedForm) {
+  Future<void> updateForm(BaseFormData updatedForm) async {
+    // First, persist the change to the database.
+    // This is the crucial missing step.
+    if (updatedForm is ApplicationData) {
+      // It's a Form 1, use the appropriate save method.
+      await _sqliteService.saveApplicationData(updatedForm);
+    } else if (updatedForm is Form2Data) {
+      // It's a Form 2, use its save method.
+      await _sqliteService.saveForm2Data(updatedForm);
+    }
+
+    // After successfully saving to the database, update the state in memory.
     final index = _forms.indexWhere((form) => form.id == updatedForm.id);
     if (index != -1) {
       _forms[index] = updatedForm;
-      notifyListeners(); // Notify listeners.
-      // Updating in Isar is handled within the form pages upon submission.
+      // Tell the UI to refresh with the updated (and now permanent) data.
+      notifyListeners();
     }
   }
 
-  // Remove a form from the list and database.
   Future<void> deleteForm(BaseFormData form) async {
+    // Ensure ID is not null before deleting
+    if (form.id == null) return;
+
     if (form.formType == FormType.form1) {
-      await _isarService
-          .deleteApplicationData(form.id); // Updated to delete ApplicationData
+      await _sqliteService.deleteApplicationData(form.id!);
     } else {
-      await _isarService.deleteForm2Data(form.id);
+      await _sqliteService.deleteForm2Data(form.id!);
     }
     _forms.removeWhere((f) => f.id == form.id);
-    notifyListeners(); // Notify listeners.
+    notifyListeners();
   }
 }

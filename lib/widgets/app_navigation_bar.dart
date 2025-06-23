@@ -6,12 +6,13 @@ class AppNavigationBar extends StatelessWidget implements PreferredSizeWidget {
   const AppNavigationBar({super.key});
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight); // Standard AppBar height.
+  Size get preferredSize =>
+      const Size.fromHeight(kToolbarHeight); // Standard AppBar height.
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      title: const Text('Desktop Forms App'),
+      title: const Text('महासेतू अँप '),
       centerTitle: false, // Align title to start.
       elevation: 4, // Add a subtle shadow.
       backgroundColor: Colors.blue.shade700,
@@ -20,14 +21,15 @@ class AppNavigationBar extends StatelessWidget implements PreferredSizeWidget {
         // Navigation button for Home.
         TextButton(
           onPressed: () => context.go('/'),
-          child: const Text('Home', style: TextStyle(color: Colors.white)),
+          child:
+              const Text('मुख्य पृष्ठ', style: TextStyle(color: Colors.white)),
         ),
         const SizedBox(width: 10),
         // Navigation button for Forms List.
         TextButton(
           onPressed: () => context.go('/forms-list'),
           child: const Text(
-            'Submitted Forms',
+            'सेव्ह केलेले फॉर्म',
             style: TextStyle(color: Colors.white),
           ),
         ),

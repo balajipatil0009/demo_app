@@ -1,26 +1,33 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart'; // For date formatting
+import 'dart:io';
 
-import 'package:flutter_desktop_app/models/form_data.dart';
-import 'package:flutter_desktop_app/services/isar_service.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:flutter_desktop_app/providers/form_provider.dart';
 import 'package:flutter_desktop_app/pages/home_page.dart';
 import 'package:flutter_desktop_app/pages/form1_page.dart';
 import 'package:flutter_desktop_app/pages/form2_page.dart';
 import 'package:flutter_desktop_app/pages/forms_list_page.dart';
-import 'package:flutter_desktop_app/providers/form_provider.dart';
 
 void main() async {
-  // Ensure Flutter widgets are initialized before accessing plugins like Isar.
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize Isar database.
-  await IsarService.initialize();
+
+  // Initialize FFI for SQLite on desktop platforms
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
+  // REMOVED: await SQLiteService.initialize();
+  // The database will be initialized lazily on its first use.
+
   runApp(
-    // MultiProvider is used to provide multiple state management instances.
     MultiProvider(
       providers: [
-        // ChangeNotifierProvider for FormProvider to manage form data across the app.
         ChangeNotifierProvider(create: (_) => FormProvider()),
       ],
       child: MyApp(),
@@ -31,33 +38,39 @@ void main() async {
 class MyApp extends StatelessWidget {
   MyApp({super.key});
 
-  // GoRouter configuration for navigating between pages.
+  // --- UPDATED: Simplified and more robust router ---
   final GoRouter _router = GoRouter(
     routes: <RouteBase>[
-      // Home page route.
       GoRoute(
         path: '/',
         builder: (BuildContext context, GoRouterState state) {
           return const HomePage();
         },
       ),
-      // Form 1 page route, can take an optional 'id' parameter for editing.
+      // Route for viewing/editing Form 1
       GoRoute(
         path: '/form1/:id',
         builder: (BuildContext context, GoRouterState state) {
-          final String? id = state.pathParameters['id'];
-          return Form1Page(formId: id != null ? int.tryParse(id) : null);
+          final idParam = state.pathParameters['id'];
+          // Handles both '/form1/new' and '/form1/123'
+          final formId = (idParam == 'new' || idParam == null)
+              ? null
+              : int.tryParse(idParam);
+          return Form1Page(formId: formId);
         },
       ),
-      // Form 2 page route, can take an optional 'id' parameter for editing.
+      // Route for viewing/editing Form 2
       GoRoute(
         path: '/form2/:id',
         builder: (BuildContext context, GoRouterState state) {
-          final String? id = state.pathParameters['id'];
-          return Form2Page(formId: id != null ? int.tryParse(id) : null);
+          final idParam = state.pathParameters['id'];
+          // Handles both '/form2/new' and '/form2/123'
+          final formId = (idParam == 'new' || idParam == null)
+              ? null
+              : int.tryParse(idParam);
+          return Form2Page(formId: formId);
         },
       ),
-      // Forms list page route.
       GoRoute(
         path: '/forms-list',
         builder: (BuildContext context, GoRouterState state) {
@@ -74,7 +87,6 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
-        // Define input decoration theme for minimalistic design.
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8.0),
@@ -93,7 +105,6 @@ class MyApp extends StatelessWidget {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         ),
-        // Define elevated button theme.
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -107,7 +118,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      routerConfig: _router, // Assign the GoRouter to the app.
+      routerConfig: _router,
     );
   }
 }

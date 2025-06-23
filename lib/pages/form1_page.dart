@@ -8,7 +8,7 @@ import 'dart:ui' as ui; // Import for ui.ImageByteFormat
 import 'package:flutter/rendering.dart'; // Import for RenderRepaintBoundary
 
 import 'package:flutter_desktop_app/models/form_data.dart'; // Using ApplicationData
-import 'package:flutter_desktop_app/services/isar_service.dart';
+import 'package:flutter_desktop_app/services/sqlite_service.dart';
 import 'package:flutter_desktop_app/providers/form_provider.dart';
 import 'package:flutter_desktop_app/utils/pdf_utils.dart';
 import 'package:flutter_desktop_app/widgets/app_navigation_bar.dart';
@@ -23,11 +23,24 @@ class Form1Page extends StatefulWidget {
 }
 
 class _Form1PageState extends State<Form1Page> {
+  // --- NEW: Add suggestion lists for Autocomplete fields ---
+  final List<String> _relationSuggestions = const [
+    'स्वतः',
+    'पत्नी',
+    'मुलगा',
+    'मुलगी',
+    'नातू',
+    'नात',
+    'वडील',
+    'आई',
+  ];
+  final List<String> _purposeSuggestions = const [
+    'शैक्षणिक',
+  ];
+
   bool _isAddressSameAsApplicant = false;
   final _formKey = GlobalKey<FormState>();
-  // Key for the A4 preview form (will be page 1 of the PDF)
   final GlobalKey _printKey = GlobalKey();
-  // Key for the dynamic text container (will be page 2 of the PDF)
   final GlobalKey _printKey2 = GlobalKey();
 
   // Controllers for Application Data fields
@@ -46,15 +59,14 @@ class _Form1PageState extends State<Form1Page> {
   final TextEditingController _streetNameApplicantController =
       TextEditingController();
   final TextEditingController _districtApplicantController =
-      TextEditingController();
+      TextEditingController(text: 'सांगली');
   final TextEditingController _talukaApplicantController =
-      TextEditingController();
+      TextEditingController(text: 'मिरज');
   final TextEditingController _pincodeApplicantController =
-      TextEditingController();
+      TextEditingController(text: "416408");
   final TextEditingController _yearsAtAddressApplicantController =
       TextEditingController();
-  final TextEditingController _emailApplicantController =
-      TextEditingController();
+  final TextEditingController _mobileController = TextEditingController();
 
   final TextEditingController _fullNameBeneficiaryController =
       TextEditingController();
@@ -75,25 +87,24 @@ class _Form1PageState extends State<Form1Page> {
   final TextEditingController _talukaBeneficiaryController =
       TextEditingController(text: 'मिरज');
   final TextEditingController _pincodeBeneficiaryController =
-      TextEditingController();
+      TextEditingController(text: "416408");
   final TextEditingController _livingYearsBeneficiaryController =
       TextEditingController();
   final TextEditingController _maharashtraResidencePeriodController =
       TextEditingController();
   final TextEditingController _certificatePurposeController =
       TextEditingController();
-// Add this controller with your other Applicant controllers
   final TextEditingController _villageApplicantController =
-      TextEditingController(text: 'कळंबा');
+      TextEditingController(text: 'आरग');
 
-  // Controllers specifically for displaying Dates (will be updated by date picker)
+  // Controllers specifically for displaying Dates
   final TextEditingController _applicationDateController =
       TextEditingController();
   final TextEditingController _dobApplicantController = TextEditingController();
   final TextEditingController _dobBeneficiaryController =
       TextEditingController();
 
-  DateTime? _applicationDate; // Keep internal DateTime for logic if needed
+  DateTime? _applicationDate;
   DateTime? _dobApplicant;
   DateTime? _dobBeneficiary;
 
@@ -105,7 +116,6 @@ class _Form1PageState extends State<Form1Page> {
   @override
   void initState() {
     super.initState();
-    // Listen to changes to update UI in real-time (for dynamic text)
     _fullNameApplicantController.addListener(_updateDynamicText);
     _houseNoApplicantController.addListener(_updateDynamicText);
     _buildingNameApplicantController.addListener(_updateDynamicText);
@@ -121,11 +131,10 @@ class _Form1PageState extends State<Form1Page> {
     if (widget.formId != null) {
       _loadFormData();
     } else {
-      // Initialize for new form
       _applicationDate = DateTime.now();
       _applicationDateController.text = _formatDate(_applicationDate);
       _referenceNoController.text = _generateReferenceNo();
-      _updateDynamicText(); // Initial update for dynamic text
+      _updateDynamicText();
     }
   }
 
@@ -134,8 +143,7 @@ class _Form1PageState extends State<Form1Page> {
     // Dispose all controllers
     _referenceNoController.dispose();
     _aadharNumberController.dispose();
-    _fullNameApplicantController
-        .removeListener(_updateDynamicText); // Remove listeners
+    _fullNameApplicantController.removeListener(_updateDynamicText);
     _fullNameApplicantController.dispose();
     _pobApplicantController.dispose();
     _houseNoApplicantController.removeListener(_updateDynamicText);
@@ -153,7 +161,7 @@ class _Form1PageState extends State<Form1Page> {
     _pincodeApplicantController.removeListener(_updateDynamicText);
     _pincodeApplicantController.dispose();
     _yearsAtAddressApplicantController.dispose();
-    _emailApplicantController.dispose();
+    _mobileController.dispose();
     _fullNameBeneficiaryController.removeListener(_updateDynamicText);
     _fullNameBeneficiaryController.dispose();
     _relationshipBeneficiaryController.removeListener(_updateDynamicText);
@@ -169,8 +177,8 @@ class _Form1PageState extends State<Form1Page> {
     _livingYearsBeneficiaryController.dispose();
     _maharashtraResidencePeriodController.dispose();
     _certificatePurposeController.dispose();
-    _villageApplicantController.dispose(); // Dispose the new controller
-    _applicationDateController.dispose(); // Dispose date controllers
+    _villageApplicantController.dispose();
+    _applicationDateController.dispose();
     _dobApplicantController.removeListener(_updateDynamicText);
     _dobApplicantController.dispose();
     _dobBeneficiaryController.dispose();
@@ -178,9 +186,7 @@ class _Form1PageState extends State<Form1Page> {
     super.dispose();
   }
 
-  // Add this new method inside _Form1PageState
   void _syncBeneficiaryAddress() {
-    // This function is safe to call from listeners because it only acts if the box is checked.
     if (_isAddressSameAsApplicant) {
       setState(() {
         _houseNoBeneficiaryController.text = _houseNoApplicantController.text;
@@ -201,28 +207,24 @@ class _Form1PageState extends State<Form1Page> {
     if (birthDate == null) return '';
     final now = DateTime.now();
     int age = now.year - birthDate.year;
-    // Adjust age if the birthday hasn't occurred yet this year
     if (now.month < birthDate.month ||
         (now.month == birthDate.month && now.day < birthDate.day)) {
       age--;
     }
-    return age >= 0 ? age.toString() : ''; // Handle case where dob is in future
+    return age >= 0 ? age.toString() : '';
   }
 
   void _updateDynamicText() {
-    // Call setState to trigger a rebuild and update the dynamic text section
     setState(() {
       _dynamicName = _fullNameApplicantController.text;
       _dynamicAddress =
           '${_houseNoApplicantController.text}, ${_societyComplexApplicantController.text}, '
           '${_streetNameApplicantController.text}, ${_talukaApplicantController.text}, '
           '${_districtApplicantController.text}, ${_pincodeApplicantController.text}';
-      // Clean up multiple commas or leading/trailing commas from dynamic address
       _dynamicAddress = _dynamicAddress
-          .replaceAll(
-              RegExp(r',(\s*,)+'), ',') // Replace multiple commas with one
-          .replaceAll(RegExp(r'^,\s*'), '') // Remove leading comma
-          .replaceAll(RegExp(r',\s*$'), ''); // Remove trailing comma
+          .replaceAll(RegExp(r',(\s*,)+'), ',')
+          .replaceAll(RegExp(r'^,\s*'), '')
+          .replaceAll(RegExp(r',\s*$'), '');
     });
   }
 
@@ -232,23 +234,19 @@ class _Form1PageState extends State<Form1Page> {
   }
 
   Future<void> _loadFormData() async {
-    final service = IsarService();
+    final service = SQLiteService();
     final formData = await service.getApplicationData(widget.formId!);
     if (formData != null) {
       setState(() {
         _currentForm = formData;
         _referenceNoController.text = formData.referenceNo;
-
         _applicationDate = formData.applicationDate;
         _applicationDateController.text = _formatDate(_applicationDate);
-
         _aadharNumberController.text = formData.aadharNumber;
         _fullNameApplicantController.text = formData.fullNameApplicant;
         _genderApplicant = formData.gender;
-
         _dobApplicant = formData.dobApplicant;
         _dobApplicantController.text = _formatDate(_dobApplicant);
-
         _pobApplicantController.text = formData.pobApplicant;
         _houseNoApplicantController.text = formData.houseNoApplicant;
         _buildingNameApplicantController.text = formData.buildingNameApplicant;
@@ -260,14 +258,12 @@ class _Form1PageState extends State<Form1Page> {
         _pincodeApplicantController.text = formData.pincodeApplicant;
         _yearsAtAddressApplicantController.text =
             formData.yearsAtAddressApplicant;
-        _emailApplicantController.text = formData.emailApplicant;
+        _mobileController.text = formData.mobile;
         _fullNameBeneficiaryController.text = formData.fullNameBeneficiary;
         _relationshipBeneficiaryController.text =
             formData.relationshipBeneficiary;
-
         _dobBeneficiary = formData.dobBeneficiary;
         _dobBeneficiaryController.text = _formatDate(_dobBeneficiary);
-
         _pobBeneficiaryController.text = formData.pobBeneficiary;
         _houseNoBeneficiaryController.text = formData.houseNoBeneficiary;
         _buildingNameBeneficiaryController.text =
@@ -283,30 +279,25 @@ class _Form1PageState extends State<Form1Page> {
         _maharashtraResidencePeriodController.text =
             formData.maharashtraResidencePeriod;
         _certificatePurposeController.text = formData.certificatePurpose;
-        _updateDynamicText(); // Update dynamic text after loading
+        _updateDynamicText();
       });
     }
   }
 
-  // PDF Generation logic remains the same (captures RepaintBoundary)
   Future<void> _generateAndSavePdf({required bool forPrinting}) async {
-    // Ensure dynamic text is updated just before capture
     _updateDynamicText();
-    // Add a small delay to allow UI to update before capturing
     await Future.delayed(const Duration(milliseconds: 100));
 
     try {
       final boundary1 =
           _printKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      final image1 = await boundary1.toImage(
-          pixelRatio: 3.0); // Increased pixelRatio for better quality
+      final image1 = await boundary1.toImage(pixelRatio: 3.0);
       final byteData1 = await image1.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes1 = byteData1!.buffer.asUint8List();
 
       final boundary2 = _printKey2.currentContext!.findRenderObject()
           as RenderRepaintBoundary;
-      final image2 = await boundary2.toImage(
-          pixelRatio: 3.0); // Increased pixelRatio for better quality
+      final image2 = await boundary2.toImage(pixelRatio: 3.0);
       final byteData2 = await image2.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes2 = byteData2!.buffer.asUint8List();
 
@@ -330,34 +321,24 @@ class _Form1PageState extends State<Form1Page> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error generating PDF: $e')),
       );
-      print('PDF Generation Error: $e'); // Log the error
     }
   }
 
   Future<void> _downloadPdf() async => _generateAndSavePdf(forPrinting: false);
   Future<void> _printPdf() async => _generateAndSavePdf(forPrinting: true);
 
-  // Form submission logic
   Future<void> _submitForm() async {
-    // Validate all fields first
     if (_formKey.currentState!.validate()) {
-      // No need for save() if using controllers directly
-
-      final service = IsarService();
+      final service = SQLiteService();
       final formProvider = Provider.of<FormProvider>(context, listen: false);
+      final formData = _currentForm ?? ApplicationData();
 
-      final formData =
-          _currentForm ?? ApplicationData(); // Create new or use existing
-
-      // Populate data from controllers and internal DateTime variables
       formData.referenceNo = _referenceNoController.text;
-      formData.applicationDate =
-          _applicationDate ?? DateTime.now(); // Use the DateTime variable
+      formData.applicationDate = _applicationDate ?? DateTime.now();
       formData.aadharNumber = _aadharNumberController.text;
       formData.fullNameApplicant = _fullNameApplicantController.text;
-      formData.gender = _genderApplicant ?? ''; // Use the state variable
-      formData.dobApplicant =
-          _dobApplicant ?? DateTime.now(); // Use the DateTime variable
+      formData.gender = _genderApplicant ?? '';
+      formData.dobApplicant = _dobApplicant ?? DateTime.now();
       formData.pobApplicant = _pobApplicantController.text;
       formData.houseNoApplicant = _houseNoApplicantController.text;
       formData.buildingNameApplicant = _buildingNameApplicantController.text;
@@ -369,12 +350,11 @@ class _Form1PageState extends State<Form1Page> {
       formData.pincodeApplicant = _pincodeApplicantController.text;
       formData.yearsAtAddressApplicant =
           _yearsAtAddressApplicantController.text;
-      formData.emailApplicant = _emailApplicantController.text;
+      formData.mobile = _mobileController.text;
       formData.fullNameBeneficiary = _fullNameBeneficiaryController.text;
       formData.relationshipBeneficiary =
           _relationshipBeneficiaryController.text;
-      formData.dobBeneficiary =
-          _dobBeneficiary ?? DateTime.now(); // Use the DateTime variable
+      formData.dobBeneficiary = _dobBeneficiary ?? DateTime.now();
       formData.pobBeneficiary = _pobBeneficiaryController.text;
       formData.houseNoBeneficiary = _houseNoBeneficiaryController.text;
       formData.buildingNameBeneficiary =
@@ -384,43 +364,39 @@ class _Form1PageState extends State<Form1Page> {
       formData.streetNameBeneficiary = _streetNameBeneficiaryController.text;
       formData.districtBeneficiary = _districtBeneficiaryController.text;
       formData.talukaBeneficiary = _talukaBeneficiaryController.text;
-      // FIX 1: Corrected typo here
       formData.pincodeBeneficiary = _pincodeBeneficiaryController.text;
       formData.livingYearsBeneficiary = _livingYearsBeneficiaryController.text;
       formData.maharashtraResidencePeriod =
           _maharashtraResidencePeriodController.text;
       formData.certificatePurpose = _certificatePurposeController.text;
-      formData.formType = FormType.form1; // Ensure correct FormType
+      formData.formType = FormType.form1;
       formData.submissionDate = DateTime.now();
-      formData.status = FormStatus.pending; // Or whatever initial status
+      formData.status = _currentForm?.status ?? FormStatus.pending;
 
       if (_currentForm == null) {
-        // Save new form
         await service.saveApplicationData(formData);
         formProvider.addForm(formData);
-        _currentForm =
-            formData; // Update state to reflect that it's now an existing form
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Form 1 submitted successfully!')),
         );
+        context.go('/forms-list');
       } else {
-        // Update existing form
-        await service
-            .saveApplicationData(formData); // Isar handles update if ID exists
+        await service.saveApplicationData(formData);
         formProvider.updateForm(formData);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Form 1 updated successfully!')),
         );
       }
+      setState(() {
+        _currentForm = formData;
+      });
     } else {
-      // If validation fails, show a message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill required fields correctly.')),
       );
     }
   }
 
-  // Helper to show date picker and update state/controller
   Future<void> _selectDate(
       BuildContext context,
       TextEditingController controller,
@@ -434,37 +410,30 @@ class _Form1PageState extends State<Form1Page> {
     );
     if (picked != null && picked != currentDate) {
       setState(() {
-        onDateSelected(picked); // Update the internal DateTime variable
-        controller.text =
-            _formatDate(picked); // Update the controller text for display
-        _updateDynamicText(); // Update dynamic text if DOB changes
+        onDateSelected(picked);
+        controller.text = _formatDate(picked);
+        _updateDynamicText();
       });
     }
   }
 
-  // --- NEW BUILD METHOD ---
   @override
   Widget build(BuildContext context) {
-    const double a4Width = 595.28; // Standard A4 width in points
-    const double a4Height = 841.89; // Standard A4 height in points
+    const double a4Width = 595.28;
 
     return Scaffold(
       appBar: const AppNavigationBar(),
       body: Form(
-        // Wrap in Form widget for validation
         key: _formKey,
         child: SingleChildScrollView(
           child: Center(
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                // SECTION 1: The A4 Preview for Page 1 of PDF
                 RepaintBoundary(
                   key: _printKey,
                   child: Container(
                     width: a4Width,
-                    // Removed fixed height here, let the content define height
-                    // height: a4Height, // This was causing overflow issues if content was tall
                     padding: const EdgeInsets.all(20.0),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -480,10 +449,8 @@ class _Form1PageState extends State<Form1Page> {
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize
-                          .min, // Make column size based on children
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Header Section
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -498,19 +465,15 @@ class _Form1PageState extends State<Form1Page> {
                                     const Text('संदर्भ क्र.',
                                         style: TextStyle(fontSize: 9)),
                                     const SizedBox(width: 5),
-                                    // Use a non-editable field for reference number
                                     _buildStyledFormField(
                                         _referenceNoController, 'संदर्भ क्र.',
                                         readOnly: true,
-                                        width: 80, // Explicit width
+                                        width: 80,
                                         height: 25,
                                         fontSize: 9,
-                                        contentPadding: const EdgeInsets
-                                            .symmetric(
-                                            horizontal: 5,
-                                            vertical:
-                                                4) // Adjusted padding for smaller text
-                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 5, vertical: 4)),
                                   ],
                                 ),
                                 const SizedBox(height: 2),
@@ -519,7 +482,6 @@ class _Form1PageState extends State<Form1Page> {
                                     const Text('अर्जाचा दिनांक',
                                         style: TextStyle(fontSize: 9)),
                                     const SizedBox(width: 5),
-                                    // Use a non-editable date field
                                     _buildStyledFormField(
                                         _applicationDateController,
                                         'अर्जाचा दिनांक',
@@ -529,25 +491,20 @@ class _Form1PageState extends State<Form1Page> {
                                             _applicationDateController,
                                             (date) => _applicationDate = date,
                                             _applicationDate),
-                                        width: 100, // Explicit width
+                                        width: 100,
                                         height: 25,
                                         fontSize: 9,
                                         contentPadding:
                                             const EdgeInsets.symmetric(
-                                                horizontal: 5,
-                                                vertical: 4) // Adjusted padding
-                                        ),
+                                                horizontal: 5, vertical: 4)),
                                   ],
                                 ),
                               ],
                             ),
                           ],
                         ),
-                        const SizedBox(height: 2),
                         Divider(color: Colors.grey.shade300, thickness: 1.0),
                         const SizedBox(height: 2),
-
-                        // Form Title
                         Center(
                           child: Container(
                             decoration: const BoxDecoration(
@@ -562,8 +519,6 @@ class _Form1PageState extends State<Form1Page> {
                           ),
                         ),
                         const SizedBox(height: 10),
-
-                        // Applicant Details
                         _buildFieldset(legend: 'अर्जदाराचा तपशील', children: [
                           _buildFormRow(
                             'आधार कार्ड क्रमांक',
@@ -591,11 +546,9 @@ class _Form1PageState extends State<Form1Page> {
                                       : null,
                             ),
                           ),
-                          // FIX 2: Use the refactored _buildFormRow
                           _buildFormRow(
                             'लिंग *',
                             Row(children: [
-                              // Use GestureDetector or InkWell to make custom radios interactive
                               GestureDetector(
                                 onTap: () {
                                   setState(() {
@@ -630,18 +583,17 @@ class _Form1PageState extends State<Form1Page> {
                             _buildStyledFormField(
                               _dobApplicantController,
                               'जन्मतारीख',
-                              readOnly:
-                                  true, // Make it read-only so keyboard doesn't pop up
+                              readOnly: true,
                               onTap: () => _selectDate(
                                   context,
                                   _dobApplicantController,
                                   (date) => _dobApplicant = date,
-                                  _dobApplicant), // Open date picker on tap
+                                  _dobApplicant),
                               validator: (value) => value == null ||
                                       value.isEmpty ||
                                       value.contains(' / / ')
                                   ? 'Required'
-                                  : null, // Check if date is picked
+                                  : null,
                             ),
                           ),
                           _buildFormRow(
@@ -665,8 +617,7 @@ class _Form1PageState extends State<Form1Page> {
                                 _societyComplexApplicantController,
                             streetNameController:
                                 _streetNameApplicantController,
-                            villageController:
-                                _villageApplicantController, // Applicant has a village
+                            villageController: _villageApplicantController,
                             talukaController: _talukaApplicantController,
                             districtController: _districtApplicantController,
                             pincodeController: _pincodeApplicantController,
@@ -682,10 +633,19 @@ class _Form1PageState extends State<Form1Page> {
                               ],
                             ),
                           ),
+                          _buildFormRow(
+                            'Mobile NO *',
+                            _buildStyledFormField(
+                              _mobileController,
+                              'Mobile NO.',
+                              validator: (value) =>
+                                  value == null || value.isEmpty
+                                      ? 'Required'
+                                      : null,
+                            ),
+                          ),
                         ]),
                         const SizedBox(height: 5),
-
-                        // Beneficiary Details
                         _buildFieldset(
                           legend: 'लाभार्थ्याचे तपशील',
                           children: [
@@ -702,13 +662,8 @@ class _Form1PageState extends State<Form1Page> {
                             ),
                             _buildFormRow(
                               'अर्जदाराशी नाते *',
-                              _buildStyledFormField(
+                              _buildRelationAutocompleteField(
                                 _relationshipBeneficiaryController,
-                                'नाते',
-                                validator: (value) =>
-                                    value == null || value.isEmpty
-                                        ? 'Required'
-                                        : null,
                               ),
                             ),
                             _buildFormRow(
@@ -735,9 +690,6 @@ class _Form1PageState extends State<Form1Page> {
                                   _pobBeneficiaryController,
                                   'जन्माचे ठिकाण',
                                 )),
-                            // Add some space before the address block
-
-                            // ADD THIS CHECKBOX WIDGET AT THE TOP
                             CheckboxListTile(
                               title: const Text(
                                 'लाभार्थ्याचा पत्ता अर्जदाराप्रमाणेच आहे',
@@ -749,32 +701,27 @@ class _Form1PageState extends State<Form1Page> {
                                 setState(() {
                                   _isAddressSameAsApplicant = value ?? false;
                                   if (_isAddressSameAsApplicant) {
-                                    // If the box is just checked, immediately copy the address
                                     _syncBeneficiaryAddress();
                                   } else {
-                                    // If unchecked, clear the beneficiary's address fields
                                     _houseNoBeneficiaryController.clear();
                                     _buildingNameBeneficiaryController.clear();
                                     _societyComplexBeneficiaryController
                                         .clear();
                                     _streetNameBeneficiaryController.clear();
-                                    _districtBeneficiaryController.clear();
-                                    _talukaBeneficiaryController.clear();
-                                    _pincodeBeneficiaryController.clear();
+                                    _districtBeneficiaryController.text =
+                                        'सांगली';
+                                    _talukaBeneficiaryController.text = 'मिरज';
+                                    _pincodeBeneficiaryController.text =
+                                        '416408';
                                   }
                                 });
                               },
-                              controlAffinity: ListTileControlAffinity
-                                  .leading, // Checkbox on the left
-                              dense: true, // Reduces vertical padding
-                              contentPadding: EdgeInsets
-                                  .zero, // Removes extra horizontal padding
+                              controlAffinity: ListTileControlAffinity.leading,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
                             ),
-                            // A little space after the checkbox
-
                             _buildAddressGroup(
-                              title:
-                                  'लाभार्थ्याचा पत्ता', // A new title for clarity
+                              title: 'लाभार्थ्याचा पत्ता',
                               houseNoController: _houseNoBeneficiaryController,
                               buildingNameController:
                                   _buildingNameBeneficiaryController,
@@ -782,7 +729,6 @@ class _Form1PageState extends State<Form1Page> {
                                   _societyComplexBeneficiaryController,
                               streetNameController:
                                   _streetNameBeneficiaryController,
-                              // villageController is omitted here, as beneficiary has no village field
                               talukaController: _talukaBeneficiaryController,
                               districtController:
                                   _districtBeneficiaryController,
@@ -809,18 +755,12 @@ class _Form1PageState extends State<Form1Page> {
                             ),
                             _buildFormRow(
                                 'प्रमाणपत्र कशासाठी हवे, त्याचा तपशील',
-                                _buildStyledFormField(
+                                _buildPurposeAutocompleteField(
                                   _certificatePurposeController,
-                                  'प्रमाणपत्र उद्देश',
-                                  maxLines:
-                                      3, // Allow multiple lines for text area
                                 )),
                           ],
                         ),
-                        // const Spacer(), // Removed Spacer as height is no longer fixed
-
-                        // Footer - Ensure it's placed at the bottom of the *content*
-                        const SizedBox(height: 20), // Add space before footer
+                        const SizedBox(height: 20),
                         Container(
                           margin: const EdgeInsets.only(top: 10),
                           padding: const EdgeInsets.only(top: 5),
@@ -834,32 +774,26 @@ class _Form1PageState extends State<Form1Page> {
                             children: [
                               Flexible(
                                   flex: 1,
-                                  child: _buildFooterItem(
-                                      'अर्जदाराचे नाव:',
-                                      _fullNameApplicantController
-                                          .text)), // Still display controller text here
+                                  child: _buildFooterItem('अर्जदाराचे नाव:',
+                                      _fullNameApplicantController.text)),
                               const SizedBox(width: 5),
                               Flexible(
                                   flex: 1,
-                                  child: _buildFooterItem('अर्जदाराची सही:',
-                                      '')), // Signature needs different handling (image or placeholder)
+                                  child:
+                                      _buildFooterItem('अर्जदाराची सही:', '')),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 10), // Space after footer
+                        const SizedBox(height: 10),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // SECTION 2: The Blue Dynamic Text Box for Page 2 of PDF
                 RepaintBoundary(
                   key: _printKey2,
                   child: Container(
                     width: a4Width,
-                    // Removed fixed height, let content define size
-                    // height: a4Height, // This was causing overflow issues
                     padding: const EdgeInsets.all(30.0),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -875,10 +809,8 @@ class _Form1PageState extends State<Form1Page> {
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize
-                          .min, // Make column size based on children
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // --- MARATHI SECTION ---
                         _buildDeclarationTitle("स्वघोषणापत्र"),
                         Wrap(
                           spacing: 5.0,
@@ -886,7 +818,6 @@ class _Form1PageState extends State<Form1Page> {
                           crossAxisAlignment: WrapCrossAlignment.end,
                           children: [
                             _buildStaticText("मी"),
-                            // These now use the state variables updated by controller listeners
                             _buildUnderlinedText(
                                 "${_fullNameApplicantController.text}, ${_fullNameBeneficiaryController.text}",
                                 minWidth: 150,
@@ -896,14 +827,11 @@ class _Form1PageState extends State<Form1Page> {
                                 _relationshipBeneficiaryController.text,
                                 minWidth: 80),
                             _buildStaticText("वय"),
-                            // Use the calculated age based on the DateTime variable
                             _buildUnderlinedText(_calculateAge(_dobApplicant),
                                 minWidth: 40),
                             _buildStaticText("वर्षे, व्यवसाय"),
-                            _buildUnderlinedText("",
-                                minWidth: 100), // Occupation placeholder
+                            _buildUnderlinedText("", minWidth: 100),
                             _buildStaticText("राहणार"),
-                            // Use the dynamic address state variable
                             _buildUnderlinedText(_dynamicAddress,
                                 minWidth: 200),
                           ],
@@ -919,34 +847,25 @@ class _Form1PageState extends State<Form1Page> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                _buildSignatureItem("ठिकाण :", "आगर"),
                                 _buildSignatureItem(
-                                    "ठिकाण :", "आगर"), // Static location?
-                                _buildSignatureItem(
-                                    "दिनांक :",
-                                    _formatDate(
-                                        DateTime.now())), // Current date
+                                    "दिनांक :", _formatDate(DateTime.now())),
                               ],
                             ),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 _buildSignatureItemRight(
-                                    "अर्जदाराची स्वाक्षरी :",
-                                    ""), // Signature placeholder
-                                _buildSignatureItemRight(
-                                    "अर्जदाराचे नाव",
-                                    _fullNameApplicantController
-                                        .text), // Applicant name from controller
+                                    "अर्जदाराची स्वाक्षरी :", ""),
+                                _buildSignatureItemRight("अर्जदाराचे नाव",
+                                    _fullNameApplicantController.text),
                               ],
                             ),
                           ],
                         ),
-
                         const SizedBox(height: 30),
                         const Divider(thickness: 1, color: Colors.grey),
                         const SizedBox(height: 20),
-
-                        // --- ENGLISH SECTION ---
                         _buildDeclarationTitle("Self Declaration"),
                         Wrap(
                           spacing: 5.0,
@@ -954,7 +873,6 @@ class _Form1PageState extends State<Form1Page> {
                           crossAxisAlignment: WrapCrossAlignment.end,
                           children: [
                             _buildStaticText("I"),
-                            // Use values from controllers/state
                             _buildUnderlinedText(
                                 _fullNameApplicantController.text,
                                 minWidth: 150,
@@ -965,16 +883,13 @@ class _Form1PageState extends State<Form1Page> {
                                 _fullNameBeneficiaryController.text,
                                 minWidth: 150),
                             _buildStaticText("aged"),
-                            // Use the calculated age
                             _buildUnderlinedText(_calculateAge(_dobApplicant),
                                 minWidth: 40),
                             _buildStaticText("occupation"),
-                            _buildUnderlinedText("",
-                                minWidth: 80), // Occupation placeholder
+                            _buildUnderlinedText("", minWidth: 80),
                             _buildStaticText("resident of Village"),
                             _buildUnderlinedText(
-                                _villageApplicantController
-                                    .text, // Using village controller here
+                                _villageApplicantController.text,
                                 minWidth: 80),
                             _buildStaticText("Taluka"),
                             _buildUnderlinedText(
@@ -991,7 +906,6 @@ class _Form1PageState extends State<Form1Page> {
                         _buildParagraph(
                             "I fully understand the consequences of giving false information. If the information as given above is found to be false, I shall be liable for prosecution and punishment under section 199 and 200 of IPC 1960 and / or any other law applicable thereto.",
                             padding: const EdgeInsets.only(top: 15)),
-
                         const SizedBox(height: 20),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1000,23 +914,18 @@ class _Form1PageState extends State<Form1Page> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                _buildSignatureItem("Place:", "आगर"),
                                 _buildSignatureItem(
-                                    "Place:", "आगर"), // Static location?
-                                _buildSignatureItem(
-                                    "Date:",
-                                    _formatDate(
-                                        DateTime.now())), // Current Date
+                                    "Date:", _formatDate(DateTime.now())),
                               ],
                             ),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                _buildSignatureItemRight("Applicant Signature:",
-                                    ""), // Signature placeholder
                                 _buildSignatureItemRight(
-                                    "Applicant Name:",
-                                    _fullNameApplicantController
-                                        .text), // Applicant name from controller
+                                    "Applicant Signature:", ""),
+                                _buildSignatureItemRight("Applicant Name:",
+                                    _fullNameApplicantController.text),
                               ],
                             ),
                           ],
@@ -1025,13 +934,12 @@ class _Form1PageState extends State<Form1Page> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20), // Space after the second section
+                const SizedBox(height: 20),
               ],
             ),
           ),
         ),
       ),
-      // Use the original bottom navigation bar for actions
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Row(
@@ -1042,9 +950,7 @@ class _Form1PageState extends State<Form1Page> {
               child: Text(_currentForm == null ? 'Submit Form' : 'Update Form'),
             ),
             const SizedBox(width: 20),
-            // FIX 3: Removed trailing comma after the first SizedBox
             SizedBox(
-              // Use SizedBox for consistent button size
               width: 150,
               height: 50,
               child: ElevatedButton.icon(
@@ -1053,10 +959,9 @@ class _Form1PageState extends State<Form1Page> {
                 label: const Text('Download PDF'),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               ),
-            ), // FIX 3: Removed trailing comma here as well
+            ),
             const SizedBox(width: 20),
             SizedBox(
-              // Use SizedBox for consistent button size
               width: 150,
               height: 50,
               child: ElevatedButton.icon(
@@ -1079,8 +984,6 @@ class _Form1PageState extends State<Form1Page> {
     return DateFormat('dd/MM/yyyy').format(date);
   }
 
-  // Removed _buildDateInputBox as we are using a TextFormField with a date picker now
-
   Widget _buildFieldset(
       {required String legend, required List<Widget> children}) {
     return Container(
@@ -1095,7 +998,7 @@ class _Form1PageState extends State<Form1Page> {
             top: -22,
             left: 5,
             child: Container(
-              color: Colors.white, // Background to "cut out" border
+              color: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 5),
               child: Text(legend,
                   style: const TextStyle(
@@ -1111,7 +1014,6 @@ class _Form1PageState extends State<Form1Page> {
     );
   }
 
-  // FIX 2: Refactored _buildFormRow to take label and the right widget
   Widget _buildFormRow(String label, Widget rightSideWidget) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
@@ -1119,13 +1021,13 @@ class _Form1PageState extends State<Form1Page> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-              width: 150, // Adjusted width slightly for better alignment
+              width: 150,
               child: Text(label,
                   style: const TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 10))),
           const SizedBox(width: 10),
           Expanded(
-            child: rightSideWidget, // Use the provided widget directly
+            child: rightSideWidget,
           ),
         ],
       ),
@@ -1133,7 +1035,6 @@ class _Form1PageState extends State<Form1Page> {
   }
 
   Widget _buildCustomRadio(String label, bool isSelected) {
-    // This widget is now passive, interaction is handled by GestureDetector in build()
     return Padding(
       padding: const EdgeInsets.only(right: 15.0),
       child: Row(
@@ -1156,26 +1057,22 @@ class _Form1PageState extends State<Form1Page> {
     );
   }
 
-  // Helper to build a styled TextFormField with the desired border and padding
-  Widget _buildStyledFormField(TextEditingController controller,
-      String labelText, // Used for validation error messages
+  Widget _buildStyledFormField(
+      TextEditingController controller, String labelText,
       {TextInputType? keyboardType,
       List<TextInputFormatter>? inputFormatters,
       int maxLines = 1,
       String? Function(String?)? validator,
       bool readOnly = false,
-      VoidCallback? onTap, // Used for date pickers etc.
-      double height = 25, // Default height for single line
-      double? width, // Optional fixed width
-      double fontSize = 10, // Default font size
-      EdgeInsets contentPadding = const EdgeInsets.symmetric(
-          horizontal: 5, vertical: 8) // Default padding
-      }) {
+      VoidCallback? onTap,
+      double height = 25,
+      double? width,
+      double fontSize = 10,
+      EdgeInsets contentPadding =
+          const EdgeInsets.symmetric(horizontal: 5, vertical: 8)}) {
     return SizedBox(
-      height: maxLines > 1
-          ? null
-          : height, // Use height for single line, null for multiline
-      width: width, // Apply width if provided
+      height: maxLines > 1 ? null : height,
+      width: width,
       child: TextFormField(
         controller: controller,
         readOnly: readOnly,
@@ -1185,11 +1082,11 @@ class _Form1PageState extends State<Form1Page> {
         maxLines: maxLines,
         style: TextStyle(fontSize: fontSize),
         decoration: InputDecoration(
-          isDense: true, // Makes the input area smaller
+          isDense: true,
           contentPadding: contentPadding,
           border: const OutlineInputBorder(
             borderSide: BorderSide(color: Colors.black),
-            borderRadius: BorderRadius.zero, // Sharp corners
+            borderRadius: BorderRadius.zero,
           ),
           enabledBorder: const OutlineInputBorder(
             borderSide: BorderSide(color: Colors.black),
@@ -1199,16 +1096,173 @@ class _Form1PageState extends State<Form1Page> {
             borderSide: BorderSide(color: Colors.black, width: 1.5),
             borderRadius: BorderRadius.zero,
           ),
-          errorStyle:
-              const TextStyle(fontSize: 8, height: 0.5), // Smaller error text
-          errorMaxLines: 2, // Allow error text to wrap
+          errorStyle: const TextStyle(fontSize: 8, height: 0.5),
+          errorMaxLines: 2,
         ),
         validator: validator,
       ),
     );
   }
 
-// REPLACE the existing _buildAddressGroup with this one.
+  Widget _buildRelationAutocompleteField(TextEditingController controller) {
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: controller.text),
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        if (textEditingValue.text.isEmpty) {
+          return const Iterable<String>.empty();
+        }
+        return _relationSuggestions.where((String option) {
+          return option
+              .toLowerCase()
+              .contains(textEditingValue.text.toLowerCase());
+        });
+      },
+      onSelected: (String selection) {
+        controller.text = selection;
+      },
+      fieldViewBuilder: (
+        BuildContext context,
+        TextEditingController fieldTextEditingController,
+        FocusNode fieldFocusNode,
+        VoidCallback onFieldSubmitted,
+      ) {
+        return SizedBox(
+          height: 32,
+          child: TextFormField(
+            controller: fieldTextEditingController,
+            focusNode: fieldFocusNode,
+            onChanged: (text) {
+              controller.text = text;
+            },
+            style: const TextStyle(fontSize: 13),
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              border: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black),
+                  borderRadius: BorderRadius.zero),
+              enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black),
+                  borderRadius: BorderRadius.zero),
+              focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black, width: 1.5),
+                  borderRadius: BorderRadius.zero),
+            ),
+          ),
+        );
+      },
+      optionsViewBuilder: (
+        BuildContext context,
+        AutocompleteOnSelected<String> onSelected,
+        Iterable<String> options,
+      ) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4.0,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200, maxWidth: 150),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: options.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final String option = options.elementAt(index);
+                  return InkWell(
+                    onTap: () {
+                      onSelected(option);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Text(option),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPurposeAutocompleteField(TextEditingController controller) {
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: controller.text),
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        if (textEditingValue.text.isEmpty) {
+          return _purposeSuggestions;
+        }
+        return _purposeSuggestions.where((String option) {
+          return option.contains(textEditingValue.text);
+        });
+      },
+      onSelected: (String selection) {
+        controller.text = selection;
+      },
+      fieldViewBuilder: (
+        BuildContext context,
+        TextEditingController fieldTextEditingController,
+        FocusNode fieldFocusNode,
+        VoidCallback onFieldSubmitted,
+      ) {
+        return TextFormField(
+          controller: fieldTextEditingController,
+          focusNode: fieldFocusNode,
+          onChanged: (text) {
+            controller.text = text;
+          },
+          maxLines: 3,
+          keyboardType: TextInputType.multiline,
+          style: const TextStyle(fontSize: 13),
+          decoration: const InputDecoration(
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            border: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.zero),
+            enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.zero),
+            focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.black, width: 1.5),
+                borderRadius: BorderRadius.zero),
+          ),
+        );
+      },
+      optionsViewBuilder: (
+        BuildContext context,
+        AutocompleteOnSelected<String> onSelected,
+        Iterable<String> options,
+      ) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4.0,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 50, maxWidth: 300),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: options.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final String option = options.elementAt(index);
+                  return InkWell(
+                    onTap: () {
+                      onSelected(option);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Text(option),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAddressGroup({
     required String title,
     required TextEditingController houseNoController,
@@ -1218,7 +1272,7 @@ class _Form1PageState extends State<Form1Page> {
     required TextEditingController talukaController,
     required TextEditingController districtController,
     required TextEditingController pincodeController,
-    TextEditingController? villageController, // Optional for the village field
+    TextEditingController? villageController,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1226,13 +1280,11 @@ class _Form1PageState extends State<Form1Page> {
         Text(title,
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
         const SizedBox(height: 5),
-        // First Row of address fields
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-                child: _buildAddressFormField('घर क्र.', houseNoController,
-                    isRequired: true)),
+                child: _buildAddressFormField('घर क्र.', houseNoController)),
             const SizedBox(width: 8),
             Expanded(
                 child: _buildAddressFormField(
@@ -1248,16 +1300,14 @@ class _Form1PageState extends State<Form1Page> {
           children: [
             Expanded(
                 child: _buildAddressFormField(
-                    'रस्त्याचे नाव', streetNameController,
-                    isRequired: true)),
+                    'रस्त्याचे नाव', streetNameController)),
             const SizedBox(width: 8),
-            // Conditionally add the Village field
             if (villageController != null)
               Expanded(
                   child: _buildAddressFormField('गांव', villageController,
                       isRequired: true))
             else
-              Expanded(child: Container()), // Keep alignment if no village
+              Expanded(child: Container()),
             const SizedBox(width: 8),
             Expanded(
                 child: _buildAddressFormField('तालुका', talukaController,
@@ -1281,7 +1331,7 @@ class _Form1PageState extends State<Form1Page> {
               return null;
             }, isRequired: true)),
             const SizedBox(width: 8),
-            Expanded(child: Container()), // Empty space to balance the row
+            Expanded(child: Container()),
           ],
         ),
         const SizedBox(height: 5),
@@ -1289,7 +1339,6 @@ class _Form1PageState extends State<Form1Page> {
     );
   }
 
-  // Helper widget specifically for the address fields (which are in a grid)
   Widget _buildAddressFormField(
     String label,
     TextEditingController controller, {
@@ -1303,10 +1352,9 @@ class _Form1PageState extends State<Form1Page> {
       children: [
         Text(label,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
-        const SizedBox(height: 3), // Space between label and field
+        const SizedBox(height: 3),
         SizedBox(
-          height:
-              25, // A fixed height helps with vertical alignment in the grid
+          height: 25,
           child: TextFormField(
             controller: controller,
             keyboardType: keyboardType,
@@ -1317,25 +1365,21 @@ class _Form1PageState extends State<Form1Page> {
               contentPadding: EdgeInsets.symmetric(horizontal: 5, vertical: 8),
               border: OutlineInputBorder(
                 borderSide: BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.zero, // Makes it a sharp rectangle
+                borderRadius: BorderRadius.zero,
               ),
               enabledBorder: OutlineInputBorder(
                 borderSide: BorderSide(color: Colors.black),
                 borderRadius: BorderRadius.zero,
               ),
               focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(
-                    color: Colors.black,
-                    width: 1.5), // Slightly thicker on focus
+                borderSide: BorderSide(color: Colors.black, width: 1.5),
                 borderRadius: BorderRadius.zero,
               ),
-              errorStyle:
-                  TextStyle(fontSize: 8, height: 0.5), // Smaller error text
+              errorStyle: TextStyle(fontSize: 8, height: 0.5),
               errorMaxLines: 2,
             ),
             validator: validator ??
                 (value) {
-                  // Use provided validator or default required
                   if (isRequired && (value == null || value.isEmpty)) {
                     return 'Required';
                   }
@@ -1353,15 +1397,13 @@ class _Form1PageState extends State<Form1Page> {
       children: [
         Text(label,
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 15), // Space for signature
+        const SizedBox(height: 15),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.only(bottom: 2),
           decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: Colors.grey))),
-          child: Text(value,
-              style: const TextStyle(
-                  fontSize: 10)), // Still display text here for PDF capture
+          child: Text(value, style: const TextStyle(fontSize: 10)),
         )
       ],
     );
@@ -1378,7 +1420,7 @@ class _Form1PageState extends State<Form1Page> {
         Container(
           height: 1.5,
           color: Colors.black,
-          width: 150, // Fixed width underline
+          width: 150,
         ),
         const SizedBox(height: 25),
       ],
@@ -1390,11 +1432,9 @@ class _Form1PageState extends State<Form1Page> {
       FontWeight fontWeight = FontWeight.normal,
       TextAlign align = TextAlign.center}) {
     return IntrinsicWidth(
-      // Make column width fit its content
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment
-            .stretch, // Stretch children to fill IntrinsicWidth
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4.0),
@@ -1402,14 +1442,13 @@ class _Form1PageState extends State<Form1Page> {
               text,
               textAlign: align,
               style: TextStyle(fontSize: 12, fontWeight: fontWeight),
-              softWrap: true, // Allow text to wrap if needed
+              softWrap: true,
             ),
           ),
           Container(
             height: 1,
             color: Colors.black,
-            constraints: BoxConstraints(
-                minWidth: minWidth), // Ensure minimum width for the underline
+            constraints: BoxConstraints(minWidth: minWidth),
           ),
         ],
       ),
@@ -1435,7 +1474,6 @@ class _Form1PageState extends State<Form1Page> {
     );
   }
 
-// buildSignatureItem and buildSignatureItemRight remain the same as they display static text for PDF capture
   Widget _buildSignatureItem(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

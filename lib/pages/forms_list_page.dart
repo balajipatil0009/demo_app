@@ -1,3 +1,5 @@
+// lib/pages/forms_list_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -14,11 +16,24 @@ class FormsListPage extends StatefulWidget {
 }
 
 class _FormsListPageState extends State<FormsListPage> {
-  String _filterFormType = 'All'; // Filter by form type.
-  String _filterStatus = 'All'; // Filter by status.
-  DateTime? _filterStartDate; // Filter by date range.
+  // A map to hold the display names for the form type filter
+  final Map<String, String> _formTypeDisplayNames = {
+    'All': 'Form Type',
+    'Form 1': 'रहिवासी दाखल',
+    'Form 2': 'उत्पन्नाचा दाखला',
+  };
+
+  // State for search functionality
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  // State for filters
+  String _filterFormType =
+      'All'; // The internal value is still 'All', 'Form 1', etc.
+  String _filterStatus = 'All';
+  DateTime? _filterStartDate;
   DateTime? _filterEndDate;
-  String _orderBy = 'submissionDateDesc'; // Order by option.
+  String _orderBy = 'submissionDateDesc';
 
   @override
   void initState() {
@@ -27,9 +42,22 @@ class _FormsListPageState extends State<FormsListPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<FormProvider>(context, listen: false).loadForms();
     });
+
+    // Listener for the search controller to update the UI on text change
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text;
+      });
+    });
   }
 
-  // Function to filter forms based on selected criteria.
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // Function to filter and sort forms based on all selected criteria.
   List<BaseFormData> _getFilteredForms(List<BaseFormData> forms) {
     List<BaseFormData> filteredForms = List.from(forms);
 
@@ -62,12 +90,31 @@ class _FormsListPageState extends State<FormsListPage> {
           .toList();
     }
 
+    // Filter by search query (name or mobile)
+    if (_searchQuery.isNotEmpty) {
+      filteredForms = filteredForms.where((form) {
+        String name = '';
+        String mobile = '';
+
+        if (form is ApplicationData) {
+          name = form.fullNameApplicant;
+          mobile = form.mobile;
+        } else if (form is Form2Data) {
+          name = form.fullNameApplicant;
+          mobile = form.mobile;
+        }
+
+        final queryLower = _searchQuery.toLowerCase();
+        return name.toLowerCase().contains(queryLower) ||
+            mobile.contains(queryLower);
+      }).toList();
+    }
+
     // Sort forms based on selected order.
     filteredForms.sort((a, b) {
       if (_orderBy == 'submissionDateAsc') {
         return a.submissionDate.compareTo(b.submissionDate);
       } else {
-        // Default to submissionDateDesc
         return b.submissionDate.compareTo(a.submissionDate);
       }
     });
@@ -75,7 +122,6 @@ class _FormsListPageState extends State<FormsListPage> {
     return filteredForms;
   }
 
-  // Show date picker for start date.
   Future<void> _selectStartDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -90,7 +136,6 @@ class _FormsListPageState extends State<FormsListPage> {
     }
   }
 
-  // Show date picker for end date.
   Future<void> _selectEndDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -107,7 +152,6 @@ class _FormsListPageState extends State<FormsListPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Consumer listens to changes in FormProvider.
     return Scaffold(
       appBar: const AppNavigationBar(),
       body: Consumer<FormProvider>(
@@ -115,88 +159,104 @@ class _FormsListPageState extends State<FormsListPage> {
           final forms = _getFilteredForms(formProvider.forms);
           return Column(
             children: <Widget>[
-              // Filtering and ordering options.
+              // Filtering and ordering options UI.
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Wrap(
-                  spacing: 16.0,
-                  runSpacing: 16.0,
-                  alignment: WrapAlignment.center,
+                child: Column(
                   children: [
-                    // Filter by Form Type.
-                    DropdownButton<String>(
-                      value: _filterFormType,
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _filterFormType = newValue!;
-                        });
-                      },
-                      items: <String>['All', 'Form 1', 'Form 2']
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      hint: const Text('Filter by Form Type'),
+                    // Search Bar
+                    TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        labelText: 'Search by Name or Mobile Number',
+                        hintText: 'Enter name or number...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              )
+                            : null,
+                      ),
                     ),
-                    // Filter by Status.
-                    DropdownButton<String>(
-                      value: _filterStatus,
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _filterStatus = newValue!;
-                        });
-                      },
-                      items: <String>['All', 'Pending', 'Waiting', 'Done']
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      hint: const Text('Filter by Status'),
-                    ),
-                    // Filter by Start Date.
-                    ElevatedButton.icon(
-                      onPressed: () => _selectStartDate(context),
-                      icon: const Icon(Icons.calendar_today),
-                      label: Text(_filterStartDate == null
-                          ? 'Start Date'
-                          : 'Start: ${DateFormat('yyyy-MM-dd').format(_filterStartDate!)}'),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey[200],
-                          foregroundColor: Colors.black),
-                    ),
-                    // Filter by End Date.
-                    ElevatedButton.icon(
-                      onPressed: () => _selectEndDate(context),
-                      icon: const Icon(Icons.calendar_today),
-                      label: Text(_filterEndDate == null
-                          ? 'End Date'
-                          : 'End: ${DateFormat('yyyy-MM-dd').format(_filterEndDate!)}'),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey[200],
-                          foregroundColor: Colors.black),
-                    ),
-                    // Order by.
-                    DropdownButton<String>(
-                      value: _orderBy,
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _orderBy = newValue!;
-                        });
-                      },
-                      items: <String>['submissionDateDesc', 'submissionDateAsc']
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value == 'submissionDateDesc'
-                              ? 'Latest First'
-                              : 'Oldest First'),
-                        );
-                      }).toList(),
-                      hint: const Text('Order By'),
+                    const SizedBox(height: 16),
+                    // Filter Dropdowns and Buttons
+                    Wrap(
+                      spacing: 16.0,
+                      runSpacing: 16.0,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        // Form Type Dropdown with user-friendly names
+                        DropdownButton<String>(
+                          value: _filterFormType,
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _filterFormType = newValue!;
+                            });
+                          },
+                          items: _formTypeDisplayNames.keys
+                              .map<DropdownMenuItem<String>>((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(_formTypeDisplayNames[value]!),
+                            );
+                          }).toList(),
+                        ),
+                        // Status Filter Dropdown
+                        DropdownButton<String>(
+                          value: _filterStatus,
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _filterStatus = newValue!;
+                            });
+                          },
+                          items: <String>['All', 'Pending', 'Waiting', 'Done']
+                              .map<DropdownMenuItem<String>>((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                        ),
+                        // Date Pickers
+                        ElevatedButton.icon(
+                          onPressed: () => _selectStartDate(context),
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(_filterStartDate == null
+                              ? 'Start Date'
+                              : 'Start: ${DateFormat('yyyy-MM-dd').format(_filterStartDate!)}'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () => _selectEndDate(context),
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(_filterEndDate == null
+                              ? 'End Date'
+                              : 'End: ${DateFormat('yyyy-MM-dd').format(_filterEndDate!)}'),
+                        ),
+                        // Sorting Dropdown
+                        DropdownButton<String>(
+                          value: _orderBy,
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _orderBy = newValue!;
+                            });
+                          },
+                          items: <String>[
+                            'submissionDateDesc',
+                            'submissionDateAsc'
+                          ].map<DropdownMenuItem<String>>((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value == 'submissionDateDesc'
+                                  ? 'Latest First'
+                                  : 'Oldest First'),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -206,13 +266,12 @@ class _FormsListPageState extends State<FormsListPage> {
                 child: forms.isEmpty
                     ? const Center(
                         child: Text(
-                          'No forms submitted yet.',
+                          'No forms match the current filters.',
                           style: TextStyle(fontSize: 18, color: Colors.grey),
                         ),
                       )
                     : SingleChildScrollView(
-                        scrollDirection: Axis
-                            .horizontal, // Allows horizontal scrolling for large tables.
+                        scrollDirection: Axis.horizontal,
                         child: DataTable(
                           columnSpacing: 20.0,
                           dataRowHeight: 60.0,
@@ -221,11 +280,11 @@ class _FormsListPageState extends State<FormsListPage> {
                           border: TableBorder.all(color: Colors.blue.shade50),
                           columns: const [
                             DataColumn(
-                                label: Text('Name',
+                                label: Text('Applicant Name',
                                     style: TextStyle(
                                         fontWeight: FontWeight.bold))),
                             DataColumn(
-                                label: Text('Phone',
+                                label: Text('Contact Info',
                                     style: TextStyle(
                                         fontWeight: FontWeight.bold))),
                             DataColumn(
@@ -241,38 +300,66 @@ class _FormsListPageState extends State<FormsListPage> {
                                     style: TextStyle(
                                         fontWeight: FontWeight.bold))),
                             DataColumn(
-                                label: Text('Details',
+                                label: Text('Actions',
                                     style: TextStyle(
                                         fontWeight: FontWeight.bold))),
                           ],
                           rows: forms.map((form) {
+                            String name = '';
+                            String contactInfo = '';
+
+                            // Correctly check for the most specific type first to get data
+                            if (form is Form2Data) {
+                              name = form.fullNameApplicant;
+                              contactInfo = form.mobile;
+                            } else if (form is ApplicationData) {
+                              name = form.fullNameApplicant;
+                              contactInfo = form.mobile;
+                            }
+
                             return DataRow(
                               cells: [
-                                // Display 'name' from ApplicationData or Form2Data
+                                DataCell(Text(name)),
+                                DataCell(Text(contactInfo)),
                                 DataCell(Text(form.formType == FormType.form1
-                                    ? (form as ApplicationData)
-                                        .fullNameApplicant
-                                    : (form as Form2Data).name)),
-                                // Display 'phone' from ApplicationData (use a dummy or a relevant one) or Form2Data
-                                DataCell(Text(form.formType == FormType.form1
-                                    ? (form as ApplicationData)
-                                        .aadharNumber // Using Aadhar as a unique identifier for display
-                                    : (form as Form2Data).phone)),
-                                DataCell(Text(form.formType == FormType.form1
-                                    ? 'Form 1'
-                                    : 'Form 2')),
+                                    ? 'Residency'
+                                    : 'Income')),
+                                // Modifiable Status Dropdown in a DataCell
                                 DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: _getStatusColor(form.status),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      form.status.name.toUpperCase(),
-                                      style: const TextStyle(
-                                          color: Colors.white, fontSize: 12),
+                                  DropdownButtonHideUnderline(
+                                    child: DropdownButton<FormStatus>(
+                                      value: form.status,
+                                      items: FormStatus.values.map((status) {
+                                        return DropdownMenuItem<FormStatus>(
+                                          value: status,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 5),
+                                            decoration: BoxDecoration(
+                                              color: _getStatusColor(status),
+                                              borderRadius:
+                                                  BorderRadius.circular(5),
+                                            ),
+                                            child: Text(
+                                              status.name.toUpperCase(),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                      onChanged: (FormStatus? newStatus) {
+                                        if (newStatus != null &&
+                                            newStatus != form.status) {
+                                          form.status = newStatus;
+                                          Provider.of<FormProvider>(context,
+                                                  listen: false)
+                                              .updateForm(form);
+                                        }
+                                      },
                                     ),
                                   ),
                                 ),
@@ -281,7 +368,6 @@ class _FormsListPageState extends State<FormsListPage> {
                                 DataCell(
                                   ElevatedButton(
                                     onPressed: () {
-                                      // Navigate to the respective form page for editing.
                                       if (form.formType == FormType.form1) {
                                         context.go('/form1/${form.id}');
                                       } else {
@@ -289,11 +375,6 @@ class _FormsListPageState extends State<FormsListPage> {
                                       }
                                     },
                                     child: const Text('View/Edit'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.blue,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 5),
-                                    ),
                                   ),
                                 ),
                               ],
@@ -309,15 +390,15 @@ class _FormsListPageState extends State<FormsListPage> {
     );
   }
 
-  // Helper function to get color for status.
+  // Helper function to get color for status pills.
   Color _getStatusColor(FormStatus status) {
     switch (status) {
       case FormStatus.pending:
-        return Colors.red;
+        return Colors.orange.shade700;
       case FormStatus.waiting:
-        return Colors.orange;
+        return Colors.blue.shade700;
       case FormStatus.done:
-        return Colors.green;
+        return Colors.green.shade700;
       default:
         return Colors.grey;
     }
